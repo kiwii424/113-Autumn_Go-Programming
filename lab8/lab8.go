@@ -1,82 +1,51 @@
 package main
 
 import (
-	"flag"
-	"fmt"
-	"net/http"
-	"os"
+    "flag"
+    "fmt"
+    "os"
 
-	"github.com/PuerkitoBio/goquery"
+    "github.com/gocolly/colly"
 )
 
 func main() {
-	// Define the max flag with a default value of 10
-	max := flag.Int("max", 10, "Max number of comments to show")
-	flag.Parse()
+    max := flag.Int("max", 10, "Max number of comments to show")
+    flag.Parse()
 
-	// Create a custom HTTP client
-	client := &http.Client{}
+    // 檢查 flag 是否正確
+    if *max <= 0 {
+        fmt.Println("Usage of", os.Args[0])
+        flag.PrintDefaults()
+        return
+    }
 
-	// Step 1: Confirm Age Verification
-	req, err := http.NewRequest("POST", "https://www.ptt.cc/ask/over18", nil)
-	if err != nil {
-		fmt.Println("Error creating request:", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-	req.Form = map[string][]string{
-		"yes": {"yes"},
-	}
+    // 初始化 Colly 爬蟲
+    c := colly.NewCollector(
+        colly.AllowedDomains("www.ptt.cc"),
+    )
 
-	// Perform the age verification request
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Println("Error in age verification:", err)
-		return
-	}
-	defer resp.Body.Close()
+    comments := []string{}
+    var count int
 
-	// Step 2: Fetch the PTT post content
-	postURL := "https://www.ptt.cc/bbs/joke/M.1481217639.A.4DF.html"
-	req, err = http.NewRequest("GET", postURL, nil)
-	if err != nil {
-		fmt.Println("Error creating request:", err)
-		return
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+    // 查找並抓取留言
+    c.OnHTML(".push", func(e *colly.HTMLElement) {
+        if count >= *max {
+            return
+        }
+        id := e.ChildText(".push-userid")
+        content := e.ChildText(".push-content")
+        time := e.ChildText(".push-ipdatetime")
 
-	resp, err = client.Do(req)
-	if err != nil {
-		fmt.Println("Error fetching post:", err)
-		return
-	}
-	defer resp.Body.Close()
+        comment := fmt.Sprintf("名字：%s，留言%s，時間： %s", id, content, time)
+        comments = append(comments, comment)
+        count++
+    })
 
-	// Load the response body into GoQuery
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		fmt.Println("Error loading document:", err)
-		return
-	}
+    // 爬取指定頁面
+    c.Visit("https://www.ptt.cc/bbs/joke/M.1481217639.A.4DF.html")
 
-	// Counter to track the number of comments collected
-	count := 0
-
-	// Extract comments
-	doc.Find(".push").Each(func(i int, s *goquery.Selection) {
-		if count < *max {
-			username := s.Find(".push-userid").Text()
-			content := s.Find(".push-content").Text()
-			time := s.Find(".push-ipdatetime").Text()
-			fmt.Printf("%d. 名字：%s，留言%s，時間：%s", count+1, username, content, time)
-			count++
-		}
-	})
-
-	// Check if no comments were printed
-	if count == 0 {
-		fmt.Println("No comments found or failed to fetch comments.")
-		os.Exit(1)
-	}
+    // 輸出抓取到的留言
+    for i, comment := range comments {
+        fmt.Printf("%d. %s\n", i+1, comment)
+    }
 }
