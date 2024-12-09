@@ -13,16 +13,18 @@ func main() {
 
 	flag.Parse()
 
-	// Check for invalid flags
-	if len(os.Args) > 1 && os.Args[1][0] == '-' && os.Args[1] != "-max" {
-		fmt.Printf("flag provided but not defined: %s\n", os.Args[1])
-		fmt.Println("Usage of:", os.Args[0])
-		flag.PrintDefaults()
-		os.Exit(2)
-	}
+	// Create a new Colly collector with custom User-Agent and allowed cookies
+	c := colly.NewCollector(
+		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"),
+		colly.AllowURLRevisit(),
+		colly.MaxDepth(1),
+	)
 
-	// Create a new Colly collector
-	c := colly.NewCollector()
+	// Enable cookies support
+	c.OnRequest(func(r *colly.Request) {
+		r.Headers.Set("Referer", "https://www.ptt.cc/")
+		// fmt.Println("Visiting:", r.URL)
+	})
 
 	// Counter to track the number of comments collected
 	count := 0
