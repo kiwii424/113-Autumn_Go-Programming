@@ -6,7 +6,6 @@ import (
     "net/http"
     "os"
     "strings"
-	"context"
 
 	"github.com/gorilla/websocket"
 	"github.com/reactivex/rxgo/v2"
@@ -19,8 +18,6 @@ var (
 	leaving       = make(chan client)
 	messages      = make(chan rxgo.Item) // all incoming client messages
 	ObservableMsg = rxgo.FromChannel(messages)
-	swearWords    []string
-    sensitiveNames []string
 )
 
 func broadcaster() {
@@ -84,49 +81,82 @@ func wshandle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func readFile(filePath string) ([]string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var result []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		result = append(result, scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
 func InitObservable() {
-    loadWords("swear_word.txt", &swearWords)
-    loadWords("sensitive_name.txt", &sensitiveNames)
+	// 讀取髒話和敏感人物名單
+	swearWords, err := readFile("swear_word.txt")
+	if err != nil {
+		log.Println("Error reading swear_word.txt:", err)
+		return
+	}
 
-    filtered := ObservableMsg.
-        Filter(func(item interface{}) bool {
-			msg := item.(rxgo.Item).V.(string)
-            for _, swearWord := range swearWords {
-                if strings.Contains(msg, swearWord) {
-                    return false
-                }
-            }
-            return true
-        })
-	mapped := filtered.
-        Map(func(_ context.Context, item interface{}) (interface{}, error) {
-			msg := item.(rxgo.Item).V.(string)
-            for _, sensitiveName := range sensitiveNames {
-                if strings.Contains(msg, sensitiveName) {
-                    msg = strings.ReplaceAll(msg, sensitiveName, sensitiveName[:1]+"*"+sensitiveName[2:])
-                }
-            }
-            return msg, nil
-        })
-	ObservableMsg = mapped
+	sensitiveNames, err := readFile("sensitive_name.txt")
+	if err != nil {
+		log.Println("Error reading sensitive_name.txt:", err)
+		return
+	}
+
+	// 處理 ObservableMsg
+	go func() {
+		for msg := range ObservableMsg.Observe() {
+			// 檢查訊息是否含有髒話
+			if containsSwearWord(msg.V.(string), swearWords) {
+				continue // 若含有髒話，跳過這條訊息
+			}
+
+			// 替換敏感人物名稱
+			modifiedMsg := replaceSensitiveNames(msg.V.(string), sensitiveNames)
+
+			// 將過濾後的訊息送到 messages channel
+			messages <- rxgo.Of(modifiedMsg)
+		}
+	}()
 }
 
-func loadWords(filename string, words *[]string) {
-    file, err := os.Open(filename)
-    if err != nil {
-        log.Fatalf("Failed to open file %s: %v", filename, err)
-    }
-    defer file.Close()
-
-    scanner := bufio.NewScanner(file)
-    for scanner.Scan() {
-        *words = append(*words, scanner.Text())
-    }
-
-    if err := scanner.Err(); err != nil {
-        log.Fatalf("Failed to read file %s: %v", filename, err)
-    }
+// 檢查訊息中是否包含髒話
+func containsSwearWord(msg string, swearWords []string) bool {
+	for _, swearWord := range swearWords {
+		if strings.Contains(strings.ToLower(msg), strings.ToLower(swearWord)) {
+			return true
+		}
+	}
+	return false
 }
+
+// 替換訊息中的敏感人物名稱
+func replaceSensitiveNames(msg string, sensitiveNames []string) string {
+	for _, sensitiveName := range sensitiveNames {
+		// 若訊息中有敏感人物名稱，則將第二個字替換為 '*'
+		if strings.Contains(msg, sensitiveName) {
+			nameParts := []rune(sensitiveName)
+			if len(nameParts) > 1 {
+				nameParts[1] = '*'
+				msg = strings.ReplaceAll(msg, sensitiveName, string(nameParts))
+			}
+		}
+	}
+	return msg
+}
+
 
 func main() {
 	InitObservable()
