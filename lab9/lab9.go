@@ -88,7 +88,7 @@ func InitObservable() {
     loadWords("swear_word.txt", &swearWords)
     loadWords("sensitive_name.txt", &sensitiveNames)
 
-    ObservableMsg = ObservableMsg.
+    filtered := ObservableMsg.
         Filter(func(item interface{}) bool {
 			msg := item.(rxgo.Item).V.(string)
             for _, swearWord := range swearWords {
@@ -97,7 +97,8 @@ func InitObservable() {
                 }
             }
             return true
-        }).
+        })
+	mapped := filtered.
         Map(func(_ context.Context, item interface{}) (interface{}, error) {
 			msg := item.(rxgo.Item).V.(string)
             for _, sensitiveName := range sensitiveNames {
@@ -107,6 +108,7 @@ func InitObservable() {
             }
             return msg, nil
         })
+	ObservableMsg = mapped
 }
 
 func loadWords(filename string, words *[]string) {
