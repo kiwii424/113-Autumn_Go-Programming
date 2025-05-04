@@ -1,3 +1,10 @@
+## Course name:
+(Chinese) Go程式設計
+(English) Go Programming
+
+## Instructor
+黃世昆
+
 ## Dept. of course offering
 Information Technology Service Center
 
